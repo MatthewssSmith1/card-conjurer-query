@@ -1,0 +1,12 @@
+{
+  "files.exclude": {
+    "package-lock.json": true,
+    ".vscode": true,
+    "node_modules": true
+  },
+  "cSpell.words": [
+    "flav",
+    "planeswalker"
+  ],
+  "workspace.isHidden": false
+}
