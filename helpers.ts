@@ -4,71 +4,9 @@ export type Text = {
 };
 
 export type Card = {
-  key: string; //card name
   data: {
-    width: number; //1500 default
-    height: number; //2100 default
-    marginX: number;
-    marginY: number;
-    // frames: [
-    //   {
-    //     name: "Multicolored Frame";
-    //     src: "/img/frames/promo/regular/m15PromoFrameM.png";
-    //     masks: [
-    //       { src: "/img/frames/promo/m15PromoMaskPinline.png"; name: "Pinline" }
-    //     ];
-    //   },
-    //   {
-    //     name: "Blue Frame";
-    //     src: "/img/frames/promo/regular/m15PromoFrameU.png";
-    //     masks: [
-    //       { src: "/img/frames/promo/m15PromoMaskRules.png"; name: "Rules" }
-    //     ];
-    //   },
-    //   {
-    //     name: "Blue Frame";
-    //     src: "/img/frames/promo/regular/m15PromoFrameU.png";
-    //     masks: [
-    //       { src: "/img/frames/promo/m15PromoMaskRules.png"; name: "Rules" }
-    //     ];
-    //   },
-    //   {
-    //     name: "Blue Frame";
-    //     src: "/img/frames/promo/regular/m15PromoFrameU.png";
-    //     masks: [
-    //       { src: "/img/frames/promo/m15PromoMaskType.png"; name: "Type" }
-    //     ];
-    //   },
-    //   {
-    //     name: "Blue Frame";
-    //     src: "/img/frames/promo/regular/m15PromoFrameU.png";
-    //     masks: [
-    //       { src: "/img/frames/promo/m15PromoMaskType.png"; name: "Type" }
-    //     ];
-    //   },
-    //   {
-    //     name: "Blue Frame";
-    //     src: "/img/frames/promo/regular/m15PromoFrameU.png";
-    //     masks: [
-    //       { src: "/img/frames/m15/regular/m15MaskTitle.png"; name: "Title" }
-    //     ];
-    //   },
-    //   {
-    //     name: "Blue Frame";
-    //     src: "/img/frames/promo/regular/m15PromoFrameU.png";
-    //     masks: [
-    //       { src: "/img/frames/m15/regular/m15MaskTitle.png"; name: "Title" }
-    //     ];
-    //   }
-    // ];
     artSource: string;
-    artX: number;
-    artY: number;
-    artZoom: number;
-    artRotate: number;
-    version: "promoRegular"; //format?
-    margins: boolean;
-    infoArtist: string; //artist
+    infoArtist: string;
     text: {
       mana: Text;
       title: Text;
@@ -83,7 +21,7 @@ export type Card = {
     };
     planeswalker: {
       abilities: string[];
-      count: number; //number of abilities
+      count: number;
     };
   };
 };
@@ -190,6 +128,21 @@ export function cmc(c: Card): number {
 
 export const err = (msg: string) => console.log(`\x1b[31m${msg}${RESET_COL}`);
 
+function desugar(tok: string): string {
+  switch (tok) {
+    case "title":
+      return "t";
+    case "mana":
+      return "m";
+    case "type":
+      return "y";
+    case "rules":
+      return "r";
+    default:
+      return tok;
+  }
+}
+
 export function tokenize(s: string): string[] {
   s = s.trim();
   if (s.length == 0) return ["end"];
@@ -199,15 +152,15 @@ export function tokenize(s: string): string[] {
   if (matchLit) return [matchLit[1], ...tokenize(matchLit[2])];
 
   //parse next word
-  var spaceI = s.indexOf(" ");
-  var word = s;
-  var after: string[] = ["end"];
-  if (spaceI != -1) {
-    word = s.substring(0, spaceI);
-    after = tokenize(s.substring(spaceI));
+  var spcIdx = s.indexOf(" ");
+  var nextTok = s;
+  var rest = ["end"];
+  if (spcIdx != -1) {
+    nextTok = s.substring(0, spcIdx);
+    rest = tokenize(s.substring(spcIdx));
   }
 
-  return [word, ...after];
+  return [desugar(nextTok), ...rest];
 }
 
 export function shuffle(array: any[]) {
