@@ -4,25 +4,23 @@ export type Text = {
 };
 
 export type Card = {
-  data: {
-    artSource: string;
-    infoArtist: string;
-    text: {
-      mana: Text;
-      title: Text;
-      type: Text;
-      rules: Text;
-      pt: Text;
-      ability0: Text;
-      ability1: Text;
-      ability2: Text;
-      ability3: Text;
-      loyalty: Text;
-    };
-    planeswalker: {
-      abilities: string[];
-      count: number;
-    };
+  artSource: string;
+  infoArtist: string;
+  text: {
+    mana: Text;
+    title: Text;
+    type: Text;
+    rules: Text;
+    pt: Text;
+    ability0: Text;
+    ability1: Text;
+    ability2: Text;
+    ability3: Text;
+    loyalty: Text;
+  };
+  planeswalker: {
+    abilities: string[];
+    count: number;
   };
 };
 
@@ -30,9 +28,9 @@ export type ParseRule = [RegExp, (match: string, ctx: Card[]) => Card[]];
 export type OutputRule = [RegExp, (ctx: Card[]) => string];
 
 export function abilities(c: Card) {
-  return c.data.planeswalker.abilities
+  return c.planeswalker.abilities
     .map((cost, i) => {
-      var a = (c.data.text as any)[`ability${i}`];
+      var a = (c.text as any)[`ability${i}`];
 
       if (a === undefined) return undefined;
 
@@ -52,9 +50,8 @@ export function fmtRules(s: string) {
   return s.substring(0, flavI);
 }
 
-export function info(c: Card) {
-  var { text, planeswalker } = c.data;
-  var { mana, title, type, rules, pt } = text;
+export function info(c: Card): string {
+  var { mana, title, type, rules, pt } = c.text;
 
   var info = [`${color(c)}${title.text}`];
 
@@ -62,59 +59,77 @@ export function info(c: Card) {
   if (type) info.push(type.text);
   if (pt) info.push(pt.text);
   if (rules) info.push("\n" + fmtRules(rules.text));
-  if (planeswalker !== undefined) info.push(abilities(c));
+  if (c.planeswalker !== undefined) info.push(abilities(c));
 
   return info.join("    ");
 }
 
+export function rulesOrAbilities(c: Card): string {
+  if (c.text.rules) return fmtRules(c.text.rules.text);
+  else if (c.planeswalker !== undefined) return abilities(c);
+
+  return "";
+}
+
 export const RESET_COL = `\x1b[0m`;
 
-const COLORS: [string, string][] = [["u", `\x1b[34m`]];
+type ColorSetting = [string, string]
+const COLORS: ColorSetting[] = [
+  ["u", `\x1b[34m`],
+  ["r", `\x1b[31m`],
+  ["g", `\x1b[32m`],
+  ["w", `\x1b[33m`],
+  ["c", `\x1b[35m`],
+];
 
 export function color(c: Card) {
-  if (!mana(c)) return;
+  if (!mana(c)) return RESET_COL;
 
   var numCols = 0;
   var color = RESET_COL;
-  if (contains(mana, "u")(c)) {
-    numCols++;
-    color = `\x1b[34m`;
-  }
-  if (contains(mana, "r")(c)) {
-    numCols++;
-    color = `\x1b[31m`;
-  }
-  if (contains(mana, "g")(c)) {
-    numCols++;
-    color = `\x1b[32m`;
-  }
-  if (contains(mana, "w")(c)) {
-    numCols++;
-    color = `\x1b[37m`;
-  }
-  if (contains(mana, "c")(c)) {
-    numCols++;
-    color = `\x1b[35m`;
-  }
-  if (numCols > 1) color = `\x1b[33m`;
+  COLORS.forEach(([abrv, col]: ColorSetting) => {
+    if (contains(mana, abrv)(c)) {
+      numCols++;
+      color = col;
+    }
+  })
+
+  // if (contains(mana, "r")(c)) {
+  //   numCols++;
+  //   color = `\x1b[31m`;
+  // }
+  // if (contains(mana, "g")(c)) {
+  //   numCols++;
+  //   color = `\x1b[32m`;
+  // }
+  // if (contains(mana, "w")(c)) {
+  //   numCols++;
+  //   color = `\x1b[33m`;
+  // }
+  // if (contains(mana, "c")(c)) {
+  //   numCols++;
+  //   color = `\x1b[35m`;
+  // }
+  if (numCols > 1) color = `\x1b[36m`;
 
   return color;
 }
 
-function contains(map: (c: Card) => Text, match: string) {
+function contains(map: (c: Card) => string, match: string) {
   const mLowerCase = match.toLowerCase();
-  return (c: Card) => map(c).text.toLowerCase().includes(mLowerCase);
+  return (c: Card) => map(c).toLowerCase().includes(mLowerCase);
 }
 
-export const type = (c: Card) => c.data.text.type;
-export const rules = (c: Card) => c.data.text.rules;
-export const title = (c: Card) => c.data.text.title;
-export const mana = (c: Card) => c.data.text.mana;
-export const pt = (c: Card) => c.data.text.pt;
+export const type = (c: Card): string => c.text.type.text;
+export const rules = (c: Card): string => c.text.rules.text;
+export const title = (c: Card): string => c.text.title.text;
+export const colorTitle = (c: Card): string => `${color(c)}${title(c)}`;
+export const mana = (c: Card): string => c.text.mana.text;
+export const pt = (c: Card): string => c.text.pt.text;
 
 export function cmc(c: Card): number {
   var tokens = mana(c)
-    .text.replace("}", " ")
+    .replace("}", " ")
     .replace("{", " ")
     .split(" ")
     .map((s) => s.trim());

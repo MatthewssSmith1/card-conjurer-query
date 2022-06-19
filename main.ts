@@ -2,40 +2,33 @@ import { readFileSync, writeFileSync } from "fs";
 import readline from "node:readline";
 import {
   Card,
-  Text,
   info,
-  color,
+  rulesOrAbilities,
+  colorTitle,
   type,
-  rules,
   title,
   mana,
-  pt,
   RESET_COL,
   err,
   tokenize,
-  cmc,
   shuffle,
 } from "./helpers";
 
 // import card conjurer file
-let data = JSON.parse(
-  readFileSync("saved-cards.cardconjurer") as any
-) as Card[];
+let dataRaw = JSON.parse(readFileSync("saved-cards.cardconjurer") as any) as {
+  key: string;
+  data: Card;
+}[];
 
-// print intermediate verison (TODO: convert to simpler format)
-writeFileSync(
-  "condensed.json",
-  JSON.stringify(
-    data.map((c) => ({
-      text: c.data.text,
-    }))
-  )
-);
+const data = dataRaw.map(({ key, data }) => {
+  data.text.title.text = key;
+  return data;
+});
 
 // print cards that have image data stored in card conjurer file
 data
-  .filter((c) => c.data.artSource.substring(0, 10) === "data:image")
-  .forEach((c) => console.log(c.data.text.title + " image data loaded"));
+  .filter((c) => c.artSource.substring(0, 10) === "data:image")
+  .forEach((c) => console.log(c.text.title + " image data loaded"));
 
 console.log(`${data.length} cards loaded`);
 
@@ -45,13 +38,24 @@ let rl = readline.createInterface({
 });
 
 type Draft = {
-  type: "single5";
+  packSize: number;
+  pool: Card[];
+  choices: Card[];
   picked: Card[];
+  passed: Card[];
 };
-const DRAFT_DEFAULT: Draft = {
-  type: "single5",
-  picked: [],
-};
+const PACK_SIZE = 5;
+function makeDraft(): Draft {
+  var pool = shuffle(Array.from(data));
+  var choices = pool.splice(0, Math.min(pool.length - 1, PACK_SIZE));
+  return {
+    packSize: PACK_SIZE,
+    pool,
+    choices,
+    picked: [],
+    passed: [],
+  };
+}
 
 type State = {
   q?: Card[];
@@ -63,9 +67,12 @@ var state: State = {
   draft: undefined,
 };
 
-function narrow
+type Filter = (c: Card) => boolean;
+function applyFilter(f: Filter) {
+  state.q = state.q?.filter(f);
+}
 
-function handleQuery(toks: string[]) {
+function handleQuery(toks: string[]): void {
   if (state.q === undefined) {
     state.q = state.draft === undefined ? data : state.draft.picked;
   }
@@ -75,39 +82,99 @@ function handleQuery(toks: string[]) {
     return;
   }
 
-  if (toks.length === 1) {
-    if (toks[0] === "end") {
-      // print q
-    } else
-      err("Last token in handleQuery() is not the expected 'end' token.");
+  var t1 = toks.shift() as string;
+
+  // default display based on result size
+  if (t1 === "end") {
+    const qCount = state.q.length;
+    if (qCount < 5) t1 = "info";
+    else if (qCount < 20) t1 = "list";
+    else t1 = "count";
   }
 
-  switch (toks.shift()) {
-    case 't':
-      
-  }
+  const narrowField = (field: (c: Card) => string): void => {
+    if (toks.length === 0) {
+      err("query field used without expected parameter");
+      return;
+    }
+
+    var t2 = toks.shift() as string;
+    applyFilter((c) => field(c).toLowerCase().includes(t2.toLowerCase()));
+    return handleQuery(toks);
+  };
+
+  if (t1 === "info") console.log(state.q.map(info).join("\n\n"));
+  else if (t1 === "list") console.log(state.q.map(colorTitle).join("\n"));
+  else if (t1 === "count") console.log(state.q.length);
+  else if (t1 === "t") return narrowField(title);
+  else if (t1 === "m") return narrowField(mana);
+  else if (t1 === "y") return narrowField(type);
+  else if (t1 === "r") return narrowField(rulesOrAbilities);
+  else err(`Unexpected token '${t1}'.`);
+}
+
+function draftList() {
+  console.log(state.draft?.choices.map(colorTitle).join("\n"));
+}
+
+function draftInfo() {
+  console.log(state.draft?.choices.map(info).join("\n"));
 }
 
 function handleDraftCmd(toks: string[]) {
-  switch (toks.shift()) {
-    case "start":
-      if (state.draft === undefined) state.draft = DRAFT_DEFAULT;
-      else err(`Draft in progress. Use 'draft stop' first.`);
-      break;
-    case "stop":
-      state.draft = undefined;
-      break;
-    default:
-      return;
+  const t1 = toks.shift();
+
+  const isDraft = state.draft !== undefined;
+
+  // start command
+  if (t1 === "start") {
+    if (!isDraft) {
+      state.draft = makeDraft();
+      draftList();
+    } else err(`Draft in progress. Use 'draft stop' before 'draft start'.`);
+
+    return;
   }
 
-  state.q = data;
+  // draft command other than start used first
+  if (!isDraft) {
+    err(`Use 'draft start' before other draft commands.`);
+    return;
+  }
+
+  if (t1 === "stop") {
+    state.draft = undefined;
+    console.log("Draft stopped.");
+    return;
+  } else if (t1 === "list") {
+    draftList();
+  } else if (t1 === "info") {
+    draftInfo();
+  } else if (t1 === "pick") {
+    var pickTitle = toks.shift() as string;
+
+    var {choices, picked, pool, passed} = state.draft as Draft;
+    var idx = choices.findIndex((c: Card) =>
+      title(c).toLowerCase().includes(pickTitle.toLowerCase())
+    );
+
+    if (idx === -1) {
+      err(`Choice not found including'${pickTitle}'`);
+      return;
+    }
+
+    picked.push(...(choices.splice(idx, 1) || []));
+    passed.push(...choices)
+    choices = pool.splice(0, Math.min(pool.length - 1, PACK_SIZE));
+  }
+
+  // state.q = data;
 }
 
 function handleCommand(toks: string[]) {
-  switch (toks.shift()) {
+  switch (toks[0]) {
     case "draft":
-      handleDraftCmd(toks);
+      handleDraftCmd(toks.slice(1));
       return;
     default:
       handleQuery(toks);
@@ -119,9 +186,9 @@ var readLineRec = async function () {
   rl.question(`${RESET_COL}> `, (line) => {
     if (line == "exit" || line == "quit" || line == "q") return rl.close();
 
-    handleCommand(tokenize(line));
+    state.q = undefined;
 
-    console.log(`${state.draft === undefined ? "no draft" : "draft"}`);
+    handleCommand(tokenize(line));
 
     readLineRec();
   });
