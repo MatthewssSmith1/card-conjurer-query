@@ -142,7 +142,8 @@ export function createCard(c: ConjuredCard): Card {
 
 export function info(c: Card): string {
   const { color, name, cost, type, stats, abils } = c;
-  return [color + name, cost, type, stats, ...abils.map((a) => "\n    " + a)]
+  const abilsTxt = abils.map((a) => `\n    ${a[0] === "•" ? "    " : ""}${a}`);
+  return [color + name, cost, type, stats, ...abilsTxt]
     .filter((txt) => txt.length != 0)
     .join("    ");
 }
