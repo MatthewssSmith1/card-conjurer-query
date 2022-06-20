@@ -9,37 +9,16 @@ import {
   name,
   type,
   cost,
+  reformatCard,
   RESET_COL,
   err,
   tokenize,
   shuffle,
 } from "./helpers";
 
-// import card conjurer file
-let dataRaw = JSON.parse(readFileSync("saved-cards.cardconjurer") as any) as {
-  key: string;
-  data: Card;
-}[];
-
-const data = dataRaw.map(({ key, data }) => {
-  data.text.title.text = key;
-  return data;
-});
-
-// print cards that have image data stored in card conjurer file
-data
-  .filter((c) => c.artSource.substring(0, 10) === "data:image")
-  .forEach((c) => console.log(c.text.title + " image data loaded"));
-
-console.log(`${data.length} cards loaded`);
-
-let rl = readline.createInterface({
-  input: process.stdin,
-  output: process.stdout,
-});
-
 // CONTENT TODO: split into two files
 type State = {
+  cube: Card
   // query (cards left)
   q: Card[];
   deck: Card[];
@@ -157,10 +136,28 @@ function setBaseQuery(toks: string[]): void {
   else toks = update(state.deck, toks, false);
 }
 
+function importCmd(): void {
+  // import card conjurer file
+  let dataRaw = JSON.parse(readFileSync("saved-cards.cardconjurer") as any) as {
+    key: string;
+    data: Card;
+  }[];
+
+  state.cube = dataRaw
+    .map(({ key, data }) => {
+      data.text.title.text = key;
+      return data;
+    })
+    .map(reformatCard);
+
+  console.log(`${state.cube.length} cards loaded`);
+}
+
 function handleCommand(toks: string[]): void {
   const tok = toks[0];
-
-  if (tok === "start") {
+  if (tok === "import") {
+    return importCmd();
+  } else if (tok === "start") {
     if (state.draft === undefined) {
       state.draft = makeDraft();
       logChoicesInfo();
@@ -230,6 +227,11 @@ function handleCommand(toks: string[]): void {
     handleQuery(toks);
   }
 }
+
+let rl = readline.createInterface({
+  input: process.stdin,
+  output: process.stdout,
+});
 
 var readLineRec = async function () {
   rl.question(`${RESET_COL}> `, (line) => {

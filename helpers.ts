@@ -1,18 +1,25 @@
-export type NewAbility = {
-  text: string;
-  num: number;
-};
-
 export type NewCard = {
   name: string;
   cost: string;
   type: string;
-  // power/toughness, health on a planeswalker, number of turns on tale, empty otherwise
+  // power/toughness (creature)
+  // health (avatar)
+  // num time counters (tale)
+  // empty (otherwise)
   stats: string;
-  // abilities: tale/avatar abilities or rules split by newlines
-  abils: NewAbility[];
+  // abilities (avatar/tale)
+  // rules split by newlines (otherwise)
+  abils: string[];
+  // value associated with each ability
+  // life change amounts (avatar)
+  // num time counters (tale)
+  // empty (otherwise)
+  abil_nums: string[];
+
+  //visuals
   artURL: string;
   artist: string;
+  flavor: string;
 };
 
 export type Text = {
@@ -162,6 +169,84 @@ export function flavorlessRules(c: Card) {
   const flavI = rules.indexOf("{flavor}");
   if (flavI == -1) return rules;
   return rules.substring(0, flavI);
+}
+
+export function reformatAbilCard(c: Card): NewCard {
+  const { artSource: artURL, infoArtist: artist } = c;
+  const {
+    title,
+    type,
+    loyalty,
+    mana,
+    ability0: a0,
+    ability1: a1,
+    ability2: a2,
+    ability3: a3,
+  } = c.text;
+  const abilsRaw = [a0.text, a1.text, a2.text, a3.text];
+
+  const isTale = type.text.includes("tale");
+
+  const { abilities: abilNumsRaw, count } = isTale ? c.saga : c.planeswalker;
+  const abils = abilsRaw.filter((_, i) => i < count);
+  const abil_nums = abilNumsRaw.filter((_, i) => i < count);
+
+  // stats
+  var stats = isTale
+    ? `${abil_nums.reduce((acc, n) => acc + +n, 0)}`
+    : loyalty.text;
+
+  return {
+    name: title.text,
+    cost: mana.text,
+    type: type.text,
+    stats,
+    abils,
+    abil_nums,
+    artURL,
+    artist,
+    flavor: "",
+  };
+}
+
+export function reformatCard(c: Card): NewCard {
+  var { text, artSource: artURL, infoArtist: artist } = c;
+
+  const imgPrefix = "data:image";
+  if (artURL.substring(0, imgPrefix.length) == imgPrefix) {
+    console.log(`${text.title.text} image data loaded`)
+    artURL = "";
+  }
+
+  const type = text.type.text;
+
+  if (type.includes("tale") || type.includes("avatar"))
+    return reformatAbilCard(c);
+
+
+  var stats = (type.includes("creature")) ? text.pt.text : "";
+
+  // get flavor out of rules
+  var flavor = "";
+  var rules = text.rules ? text.rules.text : "";
+  const flavorSep = "{flavor}";
+  const flavI = rules.indexOf(flavorSep);
+  if (flavI != -1) {
+    flavor = rules.substring(flavI + flavorSep.length);
+    rules = rules.substring(0, flavI);
+  }
+
+  return {
+    name: text.title.text,
+    cost: text.mana.text,
+    type,
+    stats,
+    abils: rules.split("\n").map((r) => r.trim()),
+    abil_nums: [],
+    artURL: artURL,
+    artist,
+    flavor,
+  };
 }
 
 /// converts a token to its short variant if possible (ie 'name' -> 'n')
