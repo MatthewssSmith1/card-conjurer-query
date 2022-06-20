@@ -4,10 +4,11 @@ import {
   Card,
   info,
   rulesOrAbilities,
-  colorTitle,
-  type,
+  coloredName,
   title,
-  mana,
+  name,
+  type,
+  cost,
   RESET_COL,
   err,
   tokenize,
@@ -37,14 +38,29 @@ let rl = readline.createInterface({
   output: process.stdout,
 });
 
+// CONTENT TODO: split into two files
+type State = {
+  // query (cards left)
+  q: Card[];
+  deck: Card[];
+  draft?: Draft;
+};
+
 type Draft = {
   packSize: number;
   pool: Card[];
   choices: Card[];
-  picked: Card[];
   passed: Card[];
 };
+
 const PACK_SIZE = 5;
+
+var state: State = {
+  q: [],
+  deck: [],
+  draft: undefined,
+};
+
 function makeDraft(): Draft {
   var pool = shuffle(Array.from(data));
   var choices = pool.splice(0, Math.min(pool.length - 1, PACK_SIZE));
@@ -52,141 +68,175 @@ function makeDraft(): Draft {
     packSize: PACK_SIZE,
     pool,
     choices,
-    picked: [],
     passed: [],
   };
 }
 
-type State = {
-  q?: Card[];
-  draft?: Draft;
-};
+const logQueryList = () => console.log(state.q.map(coloredName).join("\n"));
 
-var state: State = {
-  q: undefined,
-  draft: undefined,
-};
+const logQueryInfo = () => console.log(state.q.map(info).join("\n"));
 
-type Filter = (c: Card) => boolean;
-function applyFilter(f: Filter) {
-  state.q = state.q?.filter(f);
+const logChoicesInfo = () =>
+  console.log(state.draft?.choices.map(info).join("\n"));
+
+function defaultClosingToken(): string {
+  const noQuery = state.q === undefined;
+  const n = noQuery ? 0 : (state.q as Card[]).length;
+
+  if (n == 0) return "count";
+  else if (n < 5) return "info";
+  else if (n < 20) return "list";
+  return "count";
 }
 
-function handleQuery(toks: string[]): void {
-  if (state.q === undefined) {
-    state.q = state.draft === undefined ? data : state.draft.picked;
-  }
+export const lowercase_includes = (base: string, sub: string) =>
+  base.toLowerCase().includes(sub.toLowerCase());
 
-  if (toks.length === 0) {
-    err("handleQuery() called with no tokens");
-    return;
-  }
+function handleQuery(toks: string[] = []): void {
+  // defaults if missing closing command
+  if (toks.length == 0) toks = [defaultClosingToken()];
 
-  var t1 = toks.shift() as string;
+  const tok = toks[0];
 
-  // default display based on result size
-  if (t1 === "end") {
-    const qCount = state.q.length;
-    if (qCount < 5) t1 = "info";
-    else if (qCount < 20) t1 = "list";
-    else t1 = "count";
-  }
+  if (["n", "c", "t", "r"].includes(tok)) {
+    // pick the field selector func based on which shortcut is consumed
+    var selField = (_: Card) => "";
+    if (tok === "n") selField = name;
+    else if (tok === "c") selField = cost;
+    else if (tok === "t") selField = type;
+    else if (tok === "r") selField = rulesOrAbilities;
+    toks.shift();
 
-  const narrowField = (field: (c: Card) => string): void => {
-    if (toks.length === 0) {
-      err("query field used without expected parameter");
-      return;
+    const arg = toks[0];
+    if (toks.shift() !== undefined) {
+      const matchesQuery = (c: Card) => lowercase_includes(selField(c), arg);
+      state.q = state.q?.filter(matchesQuery);
     }
 
-    var t2 = toks.shift() as string;
-    applyFilter((c) => field(c).toLowerCase().includes(t2.toLowerCase()));
-    return handleQuery(toks);
+    // gracefully handle missing query argument
+    handleQuery(toks);
+  } else if (tok === "count") {
+    console.log(state.q?.length || "0");
+    return;
+  } else if (tok === "list") {
+    logQueryList();
+    return;
+  } else if (tok === "info") {
+    logQueryInfo();
+    return;
+  }
+}
+
+const USE_START_ERR = `Use 'draft start' before other draft commands.`;
+
+function setBaseQuery(toks: string[]): void {
+  var dft = state.draft as Draft;
+  var tok = toks[0];
+
+  const update = (
+    cards: Card[],
+    toks: string[],
+    shift: boolean = true
+  ): string[] => {
+    state.q = Array.from(cards);
+
+    if (shift) toks.shift();
+
+    return toks;
   };
 
-  if (t1 === "info") console.log(state.q.map(info).join("\n\n"));
-  else if (t1 === "list") console.log(state.q.map(colorTitle).join("\n"));
-  else if (t1 === "count") console.log(state.q.length);
-  else if (t1 === "t") return narrowField(title);
-  else if (t1 === "m") return narrowField(mana);
-  else if (t1 === "y") return narrowField(type);
-  else if (t1 === "r") return narrowField(rulesOrAbilities);
-  else err(`Unexpected token '${t1}'.`);
+  const notDrafting = state.draft === undefined;
+  if (tok === "deck") toks = update(state.deck, toks);
+  else if (notDrafting) toks = update(data, toks, false);
+  //var dft = state.draft as Draft; ^^^ in scope
+  else if (tok === "cube") toks = update(data, toks);
+  else if (tok === "pool") toks = update(dft.pool, toks);
+  else if (tok === "choices") toks = update(dft.choices, toks);
+  else if (tok === "passed") toks = update(dft.passed, toks);
+  // didn't pass any origin command while drafting
+  else toks = update(state.deck, toks, false);
 }
 
-function draftList() {
-  console.log(state.draft?.choices.map(colorTitle).join("\n"));
-}
+function handleCommand(toks: string[]): void {
+  const tok = toks[0];
 
-function draftInfo() {
-  console.log(state.draft?.choices.map(info).join("\n"));
-}
-
-function handleDraftCmd(toks: string[]) {
-  const t1 = toks.shift();
-
-  const isDraft = state.draft !== undefined;
-
-  // start command
-  if (t1 === "start") {
-    if (!isDraft) {
+  if (tok === "start") {
+    if (state.draft === undefined) {
       state.draft = makeDraft();
-      draftList();
-    } else err(`Draft in progress. Use 'draft stop' before 'draft start'.`);
-
+      logChoicesInfo();
+    } else err(`Draft in progress. Use 'draft stop' first.`);
     return;
-  }
+  } else if (tok === "stop") {
+    if (state.draft === undefined) return err(USE_START_ERR);
 
-  // draft command other than start used first
-  if (!isDraft) {
-    err(`Use 'draft start' before other draft commands.`);
-    return;
-  }
-
-  if (t1 === "stop") {
     state.draft = undefined;
     console.log("Draft stopped.");
     return;
-  } else if (t1 === "list") {
-    draftList();
-  } else if (t1 === "info") {
-    draftInfo();
-  } else if (t1 === "pick") {
-    var pickTitle = toks.shift() as string;
+  } else if (tok === "p") {
+    if (state.draft === undefined) return err(USE_START_ERR);
+    const dft = state.draft as Draft;
 
-    var {choices, picked, pool, passed} = state.draft as Draft;
-    var idx = choices.findIndex((c: Card) =>
-      title(c).toLowerCase().includes(pickTitle.toLowerCase())
+    if (toks.length != 2) return err("(p)ick must be used with 1 arg.");
+    var arg = toks[1].toLowerCase();
+
+    const isSel = (c: Card): boolean => {
+      return title(c).toLowerCase().includes(arg);
+    };
+    //TODO: change isSel to index if the input can be parsed as a number
+
+    // selected cards from arg
+    var sel: Card[] = [];
+    // choices left over (not selected)
+    var unsel: Card[] = [];
+
+    dft.choices.forEach((c) => {
+      if (isSel(c)) sel.push(c);
+      else unsel.push(c);
+    });
+
+    if (sel.length != 1) return err(`You tried to pick ${sel.length} cards.`);
+
+    state.deck.push(sel[0]);
+    state.draft.passed.push(...unsel);
+    state.draft.choices = dft.pool.splice(
+      0,
+      Math.min(dft.pool.length - 1, PACK_SIZE)
     );
+    console.log("New Choices");
+    logChoicesInfo();
+    return;
+  } else if (tok === "save") {
+    if (toks.length != 2) return err("save must be used with 1 arg.");
+    var arg = toks[1].toLowerCase();
 
-    if (idx === -1) {
-      err(`Choice not found including'${pickTitle}'`);
-      return;
+    writeFileSync(`./decks/${arg}.json`, JSON.stringify(state.deck));
+  } else if (tok === "load") {
+    if (toks.length != 2) return err("load must be used with 1 arg.");
+    var arg = toks[1].toLowerCase();
+
+    let loaded = JSON.parse(readFileSync(`./decks/${arg}.json`) as any) as
+      | Card[]
+      | undefined;
+
+    if (loaded !== undefined) {
+      console.log(`${loaded.length} cards loaded!`);
+      state.deck = loaded;
+      console.log(state.deck.map(coloredName).join("\n"));
     }
+  } else {
+    if (toks.length == 0) toks = ["count"];
 
-    picked.push(...(choices.splice(idx, 1) || []));
-    passed.push(...choices)
-    choices = pool.splice(0, Math.min(pool.length - 1, PACK_SIZE));
-  }
-
-  // state.q = data;
-}
-
-function handleCommand(toks: string[]) {
-  switch (toks[0]) {
-    case "draft":
-      handleDraftCmd(toks.slice(1));
-      return;
-    default:
-      handleQuery(toks);
-      return;
+    setBaseQuery(toks);
+    handleQuery(toks);
   }
 }
 
 var readLineRec = async function () {
   rl.question(`${RESET_COL}> `, (line) => {
-    if (line == "exit" || line == "quit" || line == "q") return rl.close();
+    line = line.trim();
+    if (line == "quit" || line == "q") return rl.close();
 
-    state.q = undefined;
+    state.q = [];
 
     handleCommand(tokenize(line));
 
